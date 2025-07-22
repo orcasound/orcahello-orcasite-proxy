@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36310.24 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrcaHelloProxy", "OrcaHelloProxy\OrcaHelloProxy.csproj", "{85432265-6C78-4B2F-AC84-65B025F73410}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{85432265-6C78-4B2F-AC84-65B025F73410}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85432265-6C78-4B2F-AC84-65B025F73410}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85432265-6C78-4B2F-AC84-65B025F73410}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85432265-6C78-4B2F-AC84-65B025F73410}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4D603A09-08E1-4838-B6AD-147DB5D5EEE3}
+	EndGlobalSection
+EndGlobal
