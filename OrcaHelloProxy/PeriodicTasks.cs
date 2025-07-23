@@ -15,7 +15,7 @@ namespace OrcaHelloProxy
         private readonly ILogger<PeriodicTasks> _logger;
         private static HttpClient _httpClient = new HttpClient();
         private static string _orcaHelloDetectionsUri = "https://aifororcasdetections.azurewebsites.net/api/detections?Page=1&SortBy=timestamp&SortOrder=desc&Timeframe=24h&Location=all&RecordsPerPage=1000";
-        private static string _orcasiteDetectionsUri = "https://live.orcasound.net/api/json/detections?page%5Blimit%5D=100&page%5Boffset%5D=0&fields%5Bdetection%5D=id%2Csource_ip%2Cplaylist_timestamp%2Cplayer_offset%2Clistener_count%2Ctimestamp%2Cdescription%2Cvisible%2Csource%2Ccategory%2Ccandidate_id%2Cfeed_id";
+        private static string _orcasiteDetectionsUri = "https://live.orcasound.net/api/json/detections?sort=-timestamp&filter[category]=whale&filter[source]=machine&page[limit]=1";
         private static string _orcasitePostDetectionUri = "https://beta.orcasound.net/api/json/detections?fields%5Bdetection%5D=id%2Csource_ip%2Cplaylist_timestamp%2Cplayer_offset%2Clistener_count%2Ctimestamp%2Cdescription%2Cvisible%2Csource%2Ccategory%2Ccandidate_id%2Cfeed_id";
         private static string _orcasiteFeedsUri = "https://beta.orcasound.net/api/json/feeds?fields%5Bfeed%5D=id%2Cname%2Cnode_name%2Cslug%2Clocation_point%2Cintro_html%2Cimage_url%2Cvisible%2Cbucket%2Cbucket_region%2Ccloudfront_url%2Cdataplicity_id%2Corcahello_id";
         private static string? _orcasiteApiKey;
