@@ -14,10 +14,16 @@ namespace OrcaHelloProxy
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<PeriodicTasks> _logger;
         private static HttpClient _httpClient = new HttpClient();
-        private static string _orcaHelloDetectionsUri = "https://aifororcasdetections.azurewebsites.net/api/detections?Page=1&SortBy=timestamp&SortOrder=desc&Timeframe=24h&Location=all&RecordsPerPage=1000";
-        private static string _orcasiteDetectionsUri = "https://live.orcasound.net/api/json/detections?sort=-timestamp&filter[category]=whale&filter[source]=machine&page[limit]=1";
+
+        // We really only need to get all that haven't been submitted already,
+        // but for now we will just get up to 1000 detections from the last week.
+        // TODO: make URI configurable.
+        //private static string _orcaHelloGetDetectionsUri = "https://aifororcasdetections.azurewebsites.net/api/detections?Page=1&SortBy=timestamp&SortOrder=desc&Timeframe=24h&Location=all&RecordsPerPage=1000";
+        private static string _orcaHelloGetDetectionsUri = "https://aifororcasdetections.azurewebsites.net/api/detections?Page=1&SortBy=timestamp&SortOrder=desc&Timeframe=1w&Location=all&RecordsPerPage=1000";
+
+        private static string _orcasiteGetDetectionsUri = "https://beta.orcasound.net/api/json/detections?sort=-timestamp&filter[category]=whale&filter[source]=machine&page[limit]=10&fields[detection]=id,source_ip,playlist_timestamp,player_offset,listener_count,timestamp,description,visible,source,category,candidate_id,feed_id";
         private static string _orcasitePostDetectionUri = "https://beta.orcasound.net/api/json/detections?fields%5Bdetection%5D=id%2Csource_ip%2Cplaylist_timestamp%2Cplayer_offset%2Clistener_count%2Ctimestamp%2Cdescription%2Cvisible%2Csource%2Ccategory%2Ccandidate_id%2Cfeed_id";
-        private static string _orcasiteFeedsUri = "https://beta.orcasound.net/api/json/feeds?fields%5Bfeed%5D=id%2Cname%2Cnode_name%2Cslug%2Clocation_point%2Cintro_html%2Cimage_url%2Cvisible%2Cbucket%2Cbucket_region%2Ccloudfront_url%2Cdataplicity_id%2Corcahello_id";
+        private static string _orcasiteGetFeedsUri = "https://beta.orcasound.net/api/json/feeds?fields%5Bfeed%5D=id%2Cname%2Cnode_name%2Cslug%2Clocation_point%2Cintro_html%2Cimage_url%2Cvisible%2Cbucket%2Cbucket_region%2Ccloudfront_url%2Cdataplicity_id%2Corcahello_id";
         private static string? _orcasiteApiKey;
 
         public PeriodicTasks(IServiceScopeFactory scopeFactory, ILogger<PeriodicTasks> logger)
@@ -80,6 +86,7 @@ namespace OrcaHelloProxy
                 return arrayElement;
             } catch (Exception e)
             {
+                _logger.LogError($"Error: {e.Message}");
                 return null;
             }
         }
@@ -99,6 +106,7 @@ namespace OrcaHelloProxy
             }
             catch (Exception e)
             {
+                _logger.LogError($"Error: {e.Message}");
                 return null;
             }
         }
@@ -111,25 +119,23 @@ namespace OrcaHelloProxy
             
             try
             {
-                JsonElement? orcasiteFeedsArray = await GetDataArrayAsync(_orcasiteFeedsUri);
+                JsonElement? orcasiteFeedsArray = await GetDataArrayAsync(_orcasiteGetFeedsUri);
                 if (orcasiteFeedsArray == null)
                 {
                     _logger.LogError("Failed to retrieve orcasite feeds.");
                     return;
                 }
 
-                // Query detections from OrcaHello over the past 24 hours.
-                // We really only need to get all that haven't been submitted already,
-                // but for now we will just get up to 1000 detections from the last 24 hours.
-                JsonElement? orcaHelloDetectionsArray = await GetRawArrayAsync(_orcaHelloDetectionsUri);
+                // Query the most recent detections from OrcaHello.
+                JsonElement? orcaHelloDetectionsArray = await GetRawArrayAsync(_orcaHelloGetDetectionsUri);
                 if (orcaHelloDetectionsArray == null)
                 {
                     _logger.LogError("Failed to retrieve orcahello detections.");
                     return;
                 }
 
-                // Query the last 100 detections already on Orcasite.
-                JsonElement? orcasiteDetectionsArray = await GetDataArrayAsync(_orcasiteDetectionsUri);
+                // Query the most recent detection(s) already on Orcasite.
+                JsonElement? orcasiteDetectionsArray = await GetDataArrayAsync(_orcasiteGetDetectionsUri);
                 if (orcasiteDetectionsArray == null)
                 {
                     _logger.LogError("Failed to retrieve orcasite detections.");
@@ -192,6 +198,11 @@ namespace OrcaHelloProxy
                         _logger.LogError($"Invalid timestamp kind in ExecuteTask: {timestamp.ValueKind}");
                         continue;
                     }
+                    if (!DateTime.TryParse(timestamp.GetString(), out DateTime dateTime))
+                    {
+                        _logger.LogError($"Invalid timestamp ExecuteTask: {timestamp}");
+                        continue;
+                    }
 
                     // Get comments from OrcaHello.
                     if (!orcaHelloDetection.TryGetProperty("comments", out var comments))
@@ -200,6 +211,12 @@ namespace OrcaHelloProxy
                         continue;
                     }
                     string? commentsString = comments.ValueKind == JsonValueKind.String ? comments.GetString() : null;
+
+                    // See if the detection is already on orcasite.
+                    if (OrcasiteAlreadyHasDetection(orcasiteDetectionsArray, dateTime, feedId, commentsString))
+                    {
+                        continue;
+                    }
 
                     // Compose a detections post.
                     JsonObject newDetection = new JsonObject
@@ -241,18 +258,18 @@ namespace OrcaHelloProxy
                     // Optionally handle response
                     if (response.IsSuccessStatusCode)
                     {
-                        Console.WriteLine("Detection posted successfully!");
+                        _logger.LogInformation($"Detection for {timestamp} posted successfully!");
                     }
                     else
                     {
                         string message = await response.Content.ReadAsStringAsync();
-                        Console.WriteLine($"Error: {response.StatusCode} - {message}");
+                        _logger.LogError($"Error: {response.StatusCode} - {message}");
                     }
                 }
             }
             catch (Exception e)
             {
-
+                _logger.LogError($"Error: {e.Message}");
             }
 #if false
             OrcanodeMonitorContext context = scope.ServiceProvider.GetRequiredService<OrcanodeMonitorContext>();
@@ -269,8 +286,111 @@ namespace OrcaHelloProxy
 #endif
         }
 
+        /// <summary>
+        /// Check whether Orcasite already has a detection with the same timestamp, feed_id, and comments.
+        /// </summary>
+        /// <param name="orcasiteDetectionsArray">Most recent detections already on Orcasite</param>
+        /// <param name="dateTime">Timestamp of OrcaHello detection</param>
+        /// <param name="feedId">Feed ID of OrcaHello detection</param>
+        /// <param name="comments">Comments from OrcaHello detection</param>
+        /// <returns></returns>
+        private bool OrcasiteAlreadyHasDetection(JsonElement? orcasiteDetectionsArray, DateTime dateTime, string feedId, string? comments)
+        {
+            if (orcasiteDetectionsArray == null)
+            {
+                return false;
+            }
+
+            // Compare against each detection known to orcasite, with newest first.
+            foreach (JsonElement detection in orcasiteDetectionsArray.Value.EnumerateArray())
+            {
+                if (!detection.TryGetProperty("attributes", out var attributes))
+                {
+                    _logger.LogError($"Missing attributes in Orcasite result");
+                    continue;
+                }
+                if (attributes.ValueKind != JsonValueKind.Object)
+                {
+                    _logger.LogError($"Invalid attributes kind in ExecuteTask: {attributes.ValueKind}");
+                    continue;
+                }
+
+                // Get timestamp according to Orcasite.
+                if (!attributes.TryGetProperty("timestamp", out var orcasiteTimestamp))
+                {
+                    _logger.LogError($"Missing timestamp in Orcasite result");
+                    continue;
+                }
+                if (orcasiteTimestamp.ValueKind != JsonValueKind.String)
+                {
+                    _logger.LogError($"Invalid timestamp kind in ExecuteTask: {orcasiteTimestamp.ValueKind}");
+                    continue;
+                }
+                string orcasiteTimestampString = orcasiteTimestamp.GetString() ?? "";
+                DateTime orcasiteDateTime = DateTime.Parse(orcasiteTimestampString);
+                if (orcasiteDateTime != dateTime)
+                {
+                    if (dateTime < orcasiteDateTime)
+                    {
+                        // The new detection is older than the latest on orcasite,
+                        // so just assume that orcasite already has it.
+                        return true;
+                    }
+                    continue;
+                }
+
+                // Get description according to Orcasite.
+                if (!attributes.TryGetProperty("description", out var description))
+                {
+                    _logger.LogError($"Missing description in Orcasite result");
+                    continue;
+                }
+                if (description.ValueKind != JsonValueKind.String)
+                {
+                    _logger.LogError($"Invalid description kind in ExecuteTask: {description.ValueKind}");
+                    continue;
+                }
+                string? orcasiteDescriptionString = description.GetString();
+                if (orcasiteDescriptionString != comments)
+                {
+                    continue;
+                }
+
+                // Get feed_id according to Orcasite.
+                if (!attributes.TryGetProperty("feed_id", out var orcasiteFeedId))
+                {
+                    _logger.LogError($"Missing feed_id in Orcasite result");
+                    continue;
+                }
+                if (orcasiteFeedId.ValueKind != JsonValueKind.String)
+                {
+                    _logger.LogError($"Invalid feed_id kind in ExecuteTask: {orcasiteFeedId.ValueKind}");
+                    continue;
+                }
+                string orcasiteFeedIdString = orcasiteFeedId.GetString() ?? "";
+                if (orcasiteFeedIdString != feedId)
+                {
+                    continue;
+                }
+
+                return true;
+            }
+            return false;
+        }
+
         private string? GetFeedId(string nameToFind, JsonElement feedsArray)
         {
+            // Implement some aliases for backwards compatibility since OrcaHello uses
+            // its own strings.
+            if (nameToFind == "North SJC")
+            {
+                nameToFind = "North San Juan Channel";
+            }
+            else if (nameToFind == "Haro Strait")
+            {
+                nameToFind = "Orcasound Lab";
+            }
+
             foreach (JsonElement feed in feedsArray.EnumerateArray())
             {
                 if (!feed.TryGetProperty("attributes", out var attributes))
